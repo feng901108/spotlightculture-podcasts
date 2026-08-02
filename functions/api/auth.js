@@ -104,10 +104,11 @@ export async function onRequest(context) {
     // 正式飞书 OAuth 流程
     const state = generateState()
     const callbackUri = redirectUri || `${url.origin}/api/auth/callback`
+    const redirect = url.searchParams.get('redirect') || '/admin/dashboard'
     const authUrl = `${FEISHU_AUTHORIZE_URL}?redirect_uri=${encodeURIComponent(callbackUri)}&app_id=${appId}&state=${state}`
 
-    // 存储 state 用于后续验证
-    await env.PODCAST_KV.put(`oauth_state:${state}`, '1', { expirationTtl: 600 })
+    // 存储 state 对应的 redirect 地址，用于回调时正确跳转
+    await env.PODCAST_KV.put(`oauth_state:${state}`, redirect, { expirationTtl: 600 })
 
     return Response.redirect(authUrl, 302)
   }
@@ -116,7 +117,12 @@ export async function onRequest(context) {
   if (path === '/api/auth/callback' && request.method === 'GET') {
     const { code, state, name } = Object.fromEntries(url.searchParams)
 
-    const redirectParam = url.searchParams.get('redirect') || '/'
+    // 从 KV 中读取之前存储的 redirect 地址
+    let redirectParam = '/admin/dashboard'
+    if (state && state !== 'dev') {
+      const stored = await env.PODCAST_KV.get(`oauth_state:${state}`)
+      if (stored) redirectParam = stored
+    }
 
     // 开发模式处理
     if (state === 'dev' && name) {
